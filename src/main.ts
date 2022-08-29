@@ -69,6 +69,7 @@ const main = (): void => {
     for (let id = 0; id < NUM_WORKERS; id++) {
         workers[id] = new Worker('worker.js');
         workers[id].onmessage = handleWorkerMessage;
+        workers[id].postMessage([ true, textureDataBuffer, controlDataBuffer, id ]);
     }
 
     // Start the show
@@ -100,7 +101,7 @@ const update = (time: number): void => {
         Atomics.store(controlDataBuffer, 0, 0);
         Atomics.store(controlDataBuffer, 1, NUM_WORKERS);
         for (let id = 0; id < NUM_WORKERS; id++) {
-            workers[id].postMessage([ textureDataBuffer, controlDataBuffer, id ]);
+            workers[id].postMessage([ false ]);
         }
     }
 

@@ -1,7 +1,22 @@
-import { CANVAS_WIDTH, NUM_PIXEL_BYTES, NUM_SLICES, SLICE_HEIGHT, WorkerMessage, WORKER_COLOURS } from './common';
+import { CANVAS_WIDTH, InitMessage, NUM_PIXEL_BYTES, NUM_SLICES, SLICE_HEIGHT, UpdateMessage, WorkerMessage, WORKER_COLOURS } from './common';
+
+let textureDataBuffer: Uint8Array;
+let controlDataBuffer: Int32Array;
+let id: number;
 
 onmessage = (e: MessageEvent<WorkerMessage>): void => {
-    const [ textureDataBuffer, controlDataBuffer, id ] = e.data;
+    const isInit = e.data[0];
+    if (isInit) handleInitMessage(e.data);
+    else handleUpdateMessage(e.data);
+};
+
+const handleInitMessage = (message: InitMessage): void => {
+    textureDataBuffer = message[1];
+    controlDataBuffer = message[2];
+    id = message[3];
+};
+
+const handleUpdateMessage = (_message: UpdateMessage): void => {
     // console.log(`[worker] [${id}] message received from main`);
     // Control data is two numbers:
     //     [0] is next slice number (increased by workers when not all slices done)
