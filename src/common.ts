@@ -10,10 +10,8 @@ export const SLICE_HEIGHT = CANVAS_HEIGHT / NUM_SLICES;
 
 export const NUM_WORKERS = 3; // Number of workers/threads which will process the slices
 
-// init flag, texture buffer, control buffer, and worker id - passed to each worker to make it run
-export type InitMessage = [ true, Uint8Array, Int32Array, number ];
-export type UpdateMessage = [ false ];
-export type WorkerMessage = InitMessage | UpdateMessage;
+// texture buffer, control buffer, and worker id - passed to each worker to make it run
+export type WorkerMessage = [ Uint8Array, Int32Array, number ] | null;
 
 // Assign colours to workers for debug:
 export type Colour = [ number, number, number ];

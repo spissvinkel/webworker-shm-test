@@ -1,22 +1,20 @@
-import { CANVAS_WIDTH, InitMessage, NUM_PIXEL_BYTES, NUM_SLICES, SLICE_HEIGHT, UpdateMessage, WorkerMessage, WORKER_COLOURS } from './common';
+import { CANVAS_WIDTH, NUM_PIXEL_BYTES, NUM_SLICES, SLICE_HEIGHT, WorkerMessage, WORKER_COLOURS } from './common';
 
 let textureDataBuffer: Uint8Array;
 let controlDataBuffer: Int32Array;
 let id: number;
 
 onmessage = (e: MessageEvent<WorkerMessage>): void => {
-    const isInit = e.data[0];
-    if (isInit) handleInitMessage(e.data);
-    else handleUpdateMessage(e.data);
+    const message = e.data;
+    if (message !== null) {
+        textureDataBuffer = message[0];
+        controlDataBuffer = message[1];
+        id = message[2];
+    }
+    doUpdate();
 };
 
-const handleInitMessage = (message: InitMessage): void => {
-    textureDataBuffer = message[1];
-    controlDataBuffer = message[2];
-    id = message[3];
-};
-
-const handleUpdateMessage = (_message: UpdateMessage): void => {
+const doUpdate = (): void => {
     // console.log(`[worker] [${id}] message received from main`);
     // Control data is two numbers:
     //     [0] is next slice number (increased by workers when not all slices done)
@@ -35,7 +33,7 @@ const handleUpdateMessage = (_message: UpdateMessage): void => {
         n = Atomics.load(controlDataBuffer, 0);
         // console.log(`[worker] [${id}] n is now ${n}`);
     }
-    // All slices are now done
+    // All slices are now done - and also this worker
     if (Atomics.sub(controlDataBuffer, 1, 1) === 1) {
         // This is the last worker, which gets to post the message back to the main thread
         // console.log(`[worker] [${id}] posting message`);
