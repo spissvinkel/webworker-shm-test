@@ -45,4 +45,34 @@ module.exports = [{
             'Cross-Origin-Embedder-Policy': 'require-corp',
         },
     },
+}, {
+    entry: './src/worker.ts',
+    target: 'web',
+    mode,
+    devtool,
+    module: {
+        rules: [{
+            test: /\.tsx?$/,
+            use: [ 'ts-loader' ],
+            exclude: /node_modules/,
+        }],
+    },
+    resolve: {
+        extensions: [ '.tsx', '.ts', '.js' ],
+    },
+    output: {
+        filename: 'worker.js',
+        path: path.join(DIST, 'public'),
+        publicPath: '/',
+    },
+    plugins: [
+        new ESLintPlugin({
+            extensions: [ 'js', 'ts', 'tsx' ],
+        }),
+        // new CopyPlugin({
+        //     patterns: [
+        //         { from: path.posix.join(PUBLIC.replace(/\\/g, '/'), '**', '*'), to: DIST },
+        //     ],
+        // }),
+    ],
 }];

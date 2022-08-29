@@ -1,5 +1,4 @@
-const CANVAS_WIDTH = 1024;
-const CANVAS_HEIGHT = 768;
+import { CANVAS_HEIGHT, CANVAS_WIDTH, NUM_CONTROL_INTS, NUM_TEXTURE_BYTES, NUM_WORKERS } from './common';
 
 const BG_COLOUR = [ 0.25, 0.0, 0.0, 1.0 ];
 
@@ -20,33 +19,41 @@ const INDICES = [
     2, 3, 0
 ];
 
-const NUM_TEXTURE_BYTES = CANVAS_WIDTH * CANVAS_HEIGHT * 4;
-
 const main = (): void => {
+
     checkSharedBufferReqs();
+
     const canvas = initCanvas();
     const gl = initWebGlContext(canvas);
     initShaderProgram(gl);
     initGlBuffers(gl);
 
-    const sharedBuffer = new SharedArrayBuffer(NUM_TEXTURE_BYTES);
-    const textureDataBuffer = new Uint8Array(sharedBuffer);
-    const a = 255;
-    let i = 0;
-    for (let y = 0; y < CANVAS_HEIGHT; y++) { // bottom-to-top
-        for (let x = 0; x < CANVAS_WIDTH; x++) { // left-to-right
-            const r = Math.random() * 255;
-            const g = Math.random() * 255;
-            const b = Math.random() * 255;
-            textureDataBuffer[i++] = r;
-            textureDataBuffer[i++] = g;
-            textureDataBuffer[i++] = b;
-            textureDataBuffer[i++] = a;
-        }
+    // All the shared data is stored in this buffer
+    const sharedBufferSize = NUM_TEXTURE_BYTES + NUM_CONTROL_INTS * Int32Array.BYTES_PER_ELEMENT;
+    const sharedBuffer = new SharedArrayBuffer(sharedBufferSize);
+
+    // Create a view for the texture data part
+    // This view will be updated without Atomics (faster)
+    const textureDataBuffer = new Uint8Array(sharedBuffer, 0, NUM_TEXTURE_BYTES);
+
+    // Create a view for the control data - which is two numbers:
+    //     [0] is next slice number (increased by workers when not all slices done)
+    //     [1] is remaining workers (decreased by workers when all slices done)
+    // This view will be updated using Atomics (thread safe)
+    const controlDataBuffer = new Int32Array(sharedBuffer, NUM_TEXTURE_BYTES, NUM_CONTROL_INTS);
+    Atomics.store(controlDataBuffer, 1, NUM_WORKERS);
+
+    // Spawn the worker threads
+    for (let id = 0; id < NUM_WORKERS; id++) {
+        const worker = new Worker('worker.js');
+        worker.onmessage = handleWorkerMessage(gl, textureDataBuffer);
+        worker.postMessage([ textureDataBuffer, controlDataBuffer, id ]);
     }
+};
 
-    /* const glTexture = */ initGlTexture(gl, textureDataBuffer);
-
+const handleWorkerMessage = (gl: WebGLRenderingContext, buffer: Uint8Array) => (e: MessageEvent<number>): void => {
+    console.log(`[main] message received from worker ${e.data}`);
+    initGlTexture(gl, buffer);
     gl.drawElements(gl.TRIANGLES, INDICES.length, gl.UNSIGNED_SHORT, 0);
 };
 
