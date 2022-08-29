@@ -24,3 +24,16 @@ canvas {
     width: 1024px;
     margin: 0px auto;
 }
+
+.bar {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+}
+
+#fps {
+    font-size: 1.1rem;
+    font-style: italic;
+    text-align: end;
+    margin-left: auto;
+}

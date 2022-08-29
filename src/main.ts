@@ -2,6 +2,7 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH, NUM_CONTROL_INTS, NUM_TEXTURE_BYTES, NUM_W
 
 const BG_COLOUR = [ 0.25, 0.0, 0.0, 1.0 ];
 
+// Vertices, UVs and indices for screen space quad
 const VERTICES = [
     -1.0,  1.0,  0.0,
     -1.0, -1.0,  0.0,
@@ -19,12 +20,32 @@ const INDICES = [
     2, 3, 0
 ];
 
+const ONE_SECOND = 1000; // Millisecond resolution
+
+const workers: Worker[] = [];
+
+let gl: WebGLRenderingContext;
+let textureDataBuffer: Uint8Array;
+let controlDataBuffer: Int32Array;
+let bufferIsUpdated = true;
+
+let lastTime = 0;
+const fps = {
+    last: 0,
+    count: 0,
+    average: 0
+};
+let fpsElem: HTMLDivElement;
+
+// The main function
 const main = (): void => {
 
     checkSharedBufferReqs();
 
+    initFpsElement();
+
     const canvas = initCanvas();
-    const gl = initWebGlContext(canvas);
+    gl = initWebGlContext(canvas);
     initShaderProgram(gl);
     initGlBuffers(gl);
 
@@ -34,29 +55,73 @@ const main = (): void => {
 
     // Create a view for the texture data part
     // This view will be updated without Atomics (faster)
-    const textureDataBuffer = new Uint8Array(sharedBuffer, 0, NUM_TEXTURE_BYTES);
+    textureDataBuffer = new Uint8Array(sharedBuffer, 0, NUM_TEXTURE_BYTES);
+    initGlTexture(gl, textureDataBuffer);
 
-    // Create a view for the control data - which is two numbers:
+    // Create a view for the control data part - which is two numbers:
     //     [0] is next slice number (increased by workers when not all slices done)
     //     [1] is remaining workers (decreased by workers when all slices done)
     // This view will be updated using Atomics (thread safe)
-    const controlDataBuffer = new Int32Array(sharedBuffer, NUM_TEXTURE_BYTES, NUM_CONTROL_INTS);
+    controlDataBuffer = new Int32Array(sharedBuffer, NUM_TEXTURE_BYTES, NUM_CONTROL_INTS);
     Atomics.store(controlDataBuffer, 1, NUM_WORKERS);
 
     // Spawn the worker threads
     for (let id = 0; id < NUM_WORKERS; id++) {
-        const worker = new Worker('worker.js');
-        worker.onmessage = handleWorkerMessage(gl, textureDataBuffer);
-        worker.postMessage([ textureDataBuffer, controlDataBuffer, id ]);
+        workers[id] = new Worker('worker.js');
+        workers[id].onmessage = handleWorkerMessage;
     }
+
+    // Start the show
+    window.requestAnimationFrame((time: number) => {
+        updateTime(time);
+        window.requestAnimationFrame(update);
+    });
 };
 
-const handleWorkerMessage = (gl: WebGLRenderingContext, buffer: Uint8Array) => (e: MessageEvent<number>): void => {
-    console.log(`[main] message received from worker ${e.data}`);
-    initGlTexture(gl, buffer);
-    gl.drawElements(gl.TRIANGLES, INDICES.length, gl.UNSIGNED_SHORT, 0);
+// Update the view
+const update = (time: number): void => {
+    // Update the FPS counter
+    const deltaTime = updateTime(time);
+    if (lastTime - fps.last >= ONE_SECOND) {
+        fps.average = fps.count;
+        fps.count = -1;
+        fps.last = lastTime;
+    }
+    fps.count++;
+    fpsElem.textContent = `${fps.average} FPS (${deltaTime.toFixed(1)} ms)`;
+
+    // If texture buffer is updated by workers - upload to GPU and render
+    if (bufferIsUpdated) {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT, gl.RGBA, gl.UNSIGNED_BYTE, textureDataBuffer);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawElements(gl.TRIANGLES, INDICES.length, gl.UNSIGNED_SHORT, 0);
+        bufferIsUpdated = false;
+        // Reset control buffer and start workers again
+        Atomics.store(controlDataBuffer, 0, 0);
+        Atomics.store(controlDataBuffer, 1, NUM_WORKERS);
+        for (let id = 0; id < NUM_WORKERS; id++) {
+            workers[id].postMessage([ textureDataBuffer, controlDataBuffer, id ]);
+        }
+    }
+
+    // Loop
+    window.requestAnimationFrame(update);
 };
 
+// All workers have finished
+const handleWorkerMessage = (/* e: MessageEvent<number> */): void => {
+    // console.log(`[main] message received from worker ${e.data}`);
+    bufferIsUpdated = true;
+};
+
+// Update elapsed time
+const updateTime = (time: number): number => {
+    const deltaTime = time - lastTime;
+    lastTime = time;
+    return deltaTime;
+};
+
+// Checked if security requirements are met so we can use SharedArrayBuffer
 const checkSharedBufferReqs = (): void => {
     // Should be true if loading web page from http://localhost/ or https
     console.log(`[main] window.isSecureContext = ${window.isSecureContext}`);
@@ -64,6 +129,14 @@ const checkSharedBufferReqs = (): void => {
     console.log(`[main] window.crossOriginIsolated = ${window.crossOriginIsolated}`);
 };
 
+// Get a reference to the FPS counter HTML element
+const initFpsElement = (): void => {
+    const elem = document.getElementById('fps') as HTMLDivElement | null;
+    if (elem === null) throw 'No fps element';
+    fpsElem = elem;
+};
+
+// Initialize the Canvas element (set its size)
 const initCanvas = (): HTMLCanvasElement => {
     const canvas = document.getElementById('canvas') as HTMLCanvasElement | null;
     if (canvas === null) throw 'No canvas';
@@ -72,15 +145,17 @@ const initCanvas = (): HTMLCanvasElement => {
     return canvas;
 };
 
+// Initialize the WebGL context
 const initWebGlContext = (canvas: HTMLCanvasElement): WebGLRenderingContext => {
     const gl = canvas.getContext('webgl');
-    if (gl === null) throw 'No context';
+    if (gl === null) throw 'No webgl context';
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.clearColor(BG_COLOUR[0], BG_COLOUR[1], BG_COLOUR[2], BG_COLOUR[3]);
     gl.clear(gl.COLOR_BUFFER_BIT);
     return gl;
 };
 
+// Initialize the GLSL shader program (vertex + fragment, embedded in the HTML)
 const initShaderProgram = (gl: WebGLRenderingContext): WebGLProgram => {
     const glVertexShader = compileShader(gl, gl.VERTEX_SHADER, 'vertex-shader');
     const glFragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, 'fragment-shader');
@@ -100,6 +175,7 @@ const initShaderProgram = (gl: WebGLRenderingContext): WebGLProgram => {
     return glProgram;
 };
 
+// Compile a shader
 const compileShader = (gl: WebGLRenderingContext, type: number, id: string): WebGLShader => {
     const glShader = gl.createShader(type);
     if (glShader === null) throw `Failed to create shader: ${id}`;
@@ -110,12 +186,14 @@ const compileShader = (gl: WebGLRenderingContext, type: number, id: string): Web
     return glShader;
 };
 
+// Get the shader source from the HTML page
 const getShaderSource = (id: string): string => {
     const elem = document.getElementById(id) as HTMLScriptElement | null;
     if (elem === null) throw `No shader source: ${id}`;
     return elem.text;
 };
 
+// Initialize the WebGL buffers for the "full screen" quad which will display the generated texture
 const initGlBuffers = (gl: WebGLRenderingContext): [ WebGLBuffer, WebGLBuffer ] => {
     const size = VERTICES.length + UVS.length;
     const stride = 5 * Float32Array.BYTES_PER_ELEMENT;
@@ -141,6 +219,7 @@ const initGlBuffers = (gl: WebGLRenderingContext): [ WebGLBuffer, WebGLBuffer ] 
     return [ vertexGlBuffer, indexGlBuffer ];
 };
 
+// Create a WebGL buffer
 const createGlBuffer = (gl: WebGLRenderingContext, target: number, dataBuffer: BufferSource): WebGLBuffer => {
     const glBuffer = gl.createBuffer();
     if (glBuffer === null) throw 'Failed to create GL buffer';
@@ -151,6 +230,7 @@ const createGlBuffer = (gl: WebGLRenderingContext, target: number, dataBuffer: B
     return glBuffer;
 };
 
+// Initialize a WebGL texture, backed by the buffer which will be updated by the workers
 const initGlTexture = (gl: WebGLRenderingContext, dataBuffer: Uint8Array): WebGLTexture => {
     const glTexture = gl.createTexture();
     if (glTexture === null) throw 'Failed to create texture';
@@ -166,4 +246,5 @@ const initGlTexture = (gl: WebGLRenderingContext, dataBuffer: Uint8Array): WebGL
     return glTexture;
 };
 
+// Run the 'main' function when everything is loaded
 window.addEventListener('load', main);
