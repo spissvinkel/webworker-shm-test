@@ -3,6 +3,18 @@
     "version": "0.1.0",
     "private": true,
     "description": "Web worker / shared memory test project",
+    "keywords": [
+        "browser",
+        "sharedarraybuffer",
+        "worker",
+        "webgl",
+        "html5",
+        "typescript"
+    ],
+    "repository": "github:spissvinkel/webworker-shm-test",
+    "homepage": "https://spissvinkel.github.io/webworker-shm-test/",
+    "author": "Simen Storsveen <code@simenstorsveen.no>",
+    "license": "Creative Commons Zero, CC0",
     "scripts": {
         "clean": "rm -rf dist/*",
         "start": "webpack serve --port 9000",
