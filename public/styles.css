@@ -3,12 +3,24 @@
 body {
     position: absolute;
     overflow: hidden;
-    margin: 0px;
-    padding: 0px;
     top: 0px;
     right: 0px;
     bottom: 0px;
     left: 0px;
     background-color: rgb(32, 32, 32);
     color: rgb(224, 224, 224);
+}
+
+body, canvas {
+	margin: 0px;
+	padding: 0px;
+}
+
+canvas {
+	display: block;
+}
+
+#page {
+    width: 1024px;
+    margin: 0px auto;
 }

@@ -6,10 +6,31 @@
         <meta name="viewport" content="minimum-scale=1.0,initial-scale=1.0,width=device-width">
         <link rel="stylesheet" type="text/css" href="styles.css" />
         <link rel="icon" href="data:,">
+        <script id="vertex-shader" type="x-shader/x-vertex">
+            precision highp float;
+            attribute vec3 vxPosition;
+            attribute vec2 vxUV;
+            varying vec2 frUV;
+            void main() {
+                frUV = vxUV;
+                gl_Position = vec4(vxPosition, 1.0);
+            }
+        </script>
+        <script id="fragment-shader" type="x-shader/x-fragment">
+            precision highp float;
+            uniform sampler2D txSampler;
+            varying vec2 frUV;
+            void main() {
+                gl_FragColor = texture2D(txSampler, frUV);
+            }
+        </script>
         <script src="index.js"></script>
-        <title>webworker-shm-test</title>
+        <title>Web worker / shared memory test</title>
     </head>
     <body>
-        <h2>webworker-shm-test</h2>
+        <div id="page">
+            <h2>Web worker / shared memory test</h2>
+            <canvas id="canvas"></canvas>
+        </div>
     </body>
 </html>
