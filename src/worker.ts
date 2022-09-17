@@ -1,54 +1,43 @@
-import { CANVAS_WIDTH, NUM_PIXEL_BYTES, NUM_SLICES, SLICE_HEIGHT, WorkerMessage, WORKER_COLOURS } from './common';
+import { CANVAS_WIDTH, ControlIndex, DEBUG, NUM_PIXEL_BYTES, SLICE_HEIGHT, WorkerMessage, WORKER_COLOURS } from './common';
 
-let textureDataBuffer: Uint8Array;
-let controlDataBuffer: Int32Array;
+let textureData: Uint8Array;
+let controlData: Int32Array;
 let id: number;
 
-onmessage = (e: MessageEvent<WorkerMessage>): void => {
-    const message = e.data;
-    if (message !== null) {
-        textureDataBuffer = message[0];
-        controlDataBuffer = message[1];
-        id = message[2];
+// Handle (init) message from main thread
+const handleMessage = (e: MessageEvent<WorkerMessage | null>): void => {
+    const { data } = e;
+    if (data !== null) {
+        textureData = data.textureData;
+        controlData = data.controlData;
+        id = data.workerId;
     }
     doUpdate();
 };
 
 const doUpdate = (): void => {
-    // console.log(`[worker] [${id}] message received from main`);
-    // Control data is two numbers:
-    //     [0] is next slice number (increased by workers when not all slices done)
-    //     [1] is remaining workers (decreased by workers when all slices done)
-    // and must be accessed using Atomics
-    let n = Atomics.load(controlDataBuffer, 0);
-    // console.log(`[worker] [${id}] n starts at ${n}`);
-    while (n < NUM_SLICES) {
-        // Try to increase slice number - another thread may have done so already
-        if (Atomics.compareExchange(controlDataBuffer, 0, n, n + 1) === n) {
-            // console.log(`[worker] [${id}] n increased to ${n + 1}`);
-            // textureDataBuffer may be updated without using Atomics because the slice is now reserved
-            fillBuffer(textureDataBuffer, n, id);
-        }
-        // Check if all slices are done
-        n = Atomics.load(controlDataBuffer, 0);
-        // console.log(`[worker] [${id}] n is now ${n}`);
+    if (DEBUG) console.log(`[worker] [${id}] message received from main`);
+    let n: number;
+    while ((n = Atomics.sub(controlData, ControlIndex.REMAINING_SLICES, 1)) >= 0) {
+        if (DEBUG) console.log(`[worker] [${id}] processing slice ${n}`);
+        fillSliceWithStatic(textureData, n, id);
     }
     // All slices are now done - and also this worker
-    if (Atomics.sub(controlDataBuffer, 1, 1) === 1) {
+    if (Atomics.sub(controlData, ControlIndex.REMAINING_WORKERS, 1) === 0) {
         // This is the last worker, which gets to post the message back to the main thread
-        // console.log(`[worker] [${id}] posting message`);
+        if (DEBUG) console.log(`[worker] [${id}] posting message`);
         postMessage(id);
     }
 };
 
-const fillBuffer = (buffer: Uint8Array, n: number, id: number): void => {
+const fillSliceWithStatic = (buffer: Uint8Array, n: number, id: number): void => {
     // Do the actual work for a particular slice
     const colour = WORKER_COLOURS[id % WORKER_COLOURS.length];
     const alpha = 255;
     const yStart = n * SLICE_HEIGHT;
     const yEnd = yStart + SLICE_HEIGHT;
     let i = yStart * CANVAS_WIDTH * NUM_PIXEL_BYTES; // buffer index
-    // console.log(`[worker] [${id}] filling buffer from ${yStart}`);
+    if (DEBUG) console.log(`[worker] [${id}] filling buffer from ${yStart}`);
     for (let y = yStart; y < yEnd; y++) { // bottom-to-top
         for (let x = 0; x < CANVAS_WIDTH; x++) { // left-to-right
             let [ red, green, blue ] = colour;
@@ -64,3 +53,6 @@ const fillBuffer = (buffer: Uint8Array, n: number, id: number): void => {
         }
     }
 };
+
+// Register handler for messages from the main thread
+self.addEventListener('message', handleMessage);
