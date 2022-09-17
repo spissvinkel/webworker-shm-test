@@ -1,8 +1,11 @@
-import { CANVAS_WIDTH, ControlIndex, DEBUG, NUM_PIXEL_BYTES, SLICE_HEIGHT, WorkerMessage, WORKER_COLOURS } from './common';
+import { BufferChunk, ColourRGB, ControlIndex, DEBUG, getColour, mkBufferChunk, updateBufferChunk, WorkerMessage } from './common';
 
 let textureData: Uint8Array;
 let controlData: Int32Array;
 let id: number;
+let colour: ColourRGB;
+const alpha = 255;
+let chunk: BufferChunk;
 
 // Handle (init) message from main thread
 const handleMessage = (e: MessageEvent<WorkerMessage | null>): void => {
@@ -11,6 +14,8 @@ const handleMessage = (e: MessageEvent<WorkerMessage | null>): void => {
         textureData = data.textureData;
         controlData = data.controlData;
         id = data.workerId;
+        colour = getColour(id);
+        chunk = mkBufferChunk();
     }
     doUpdate();
 };
@@ -30,16 +35,13 @@ const doUpdate = (): void => {
     }
 };
 
+// Do the actual work for a particular slice
 const fillSliceWithStatic = (buffer: Uint8Array, n: number, id: number): void => {
-    // Do the actual work for a particular slice
-    const colour = WORKER_COLOURS[id % WORKER_COLOURS.length];
-    const alpha = 255;
-    const yStart = n * SLICE_HEIGHT;
-    const yEnd = yStart + SLICE_HEIGHT;
-    let i = yStart * CANVAS_WIDTH * NUM_PIXEL_BYTES; // buffer index
-    if (DEBUG) console.log(`[worker] [${id}] filling buffer from ${yStart}`);
+    const { xStart, xEnd, yStart, yEnd, iStart} = updateBufferChunk(chunk, n);
+    let i = iStart; // buffer index
+    if (DEBUG) console.log(`[worker] [${id}] filling buffer chunk [ ${xStart}, ${xEnd}, ${yStart}, ${yEnd} ] (${iStart})`);
     for (let y = yStart; y < yEnd; y++) { // bottom-to-top
-        for (let x = 0; x < CANVAS_WIDTH; x++) { // left-to-right
+        for (let x = xStart; x < xEnd; x++) { // left-to-right
             let [ red, green, blue ] = colour;
             if (x > 0 && y > yStart) {
                 red = Math.random() * 255;

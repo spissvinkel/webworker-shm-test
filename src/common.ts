@@ -22,10 +22,34 @@ export interface WorkerMessage {
     workerId: number;
 }
 
-export type Colour = [ number, number, number ];
+export interface BufferChunk {
+    xStart: number;
+    xEnd: number;
+    yStart: number;
+    yEnd: number;
+    iStart: number;
+}
+
+export const mkBufferChunk = (): BufferChunk => {
+    const xStart = 0;
+    const xEnd = CANVAS_WIDTH;
+    const yStart = 0;
+    const yEnd = SLICE_HEIGHT;
+    const iStart = 0;
+    return { xStart, xEnd, yStart, yEnd, iStart };
+};
+
+export const updateBufferChunk = (chunk: BufferChunk, sliceNum: number): BufferChunk => {
+    chunk.yStart = sliceNum * SLICE_HEIGHT;
+    chunk.yEnd = chunk.yStart + SLICE_HEIGHT;
+    chunk.iStart = chunk.yStart * CANVAS_WIDTH * NUM_PIXEL_BYTES;
+    return chunk;
+};
+
+export type ColourRGB = [ number, number, number ];
 
 // Assign colours to workers for debug:
-export const WORKER_COLOURS: Colour[] = [
+const WORKER_COLOURS: ColourRGB[] = [
     [ 255,   0,   0 ],
     [   0, 255,   0 ],
     [   0,   0, 255 ],
@@ -35,3 +59,5 @@ export const WORKER_COLOURS: Colour[] = [
     [ 255, 255, 255 ],
     [   0,   0,   0 ]
 ];
+
+export const getColour = (workerId: number): ColourRGB => WORKER_COLOURS[workerId % WORKER_COLOURS.length];
