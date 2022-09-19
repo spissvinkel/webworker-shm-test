@@ -1,45 +1,72 @@
-import { BufferChunk, ColourRGB, ControlIndex, DEBUG, getColour, mkBufferChunk, updateBufferChunk, WorkerMessage } from './common';
+import { BufferChunk, mkBufferChunk, updateBufferChunk } from './chunk';
+import { DEBUG } from './common';
+import { decreaseRemainingChunks, decreaseRemainingWorkers, getWorkerState, setWaitingWorkerState, waitOnWorkerState, WorkerState } from './control';
+import { InitWorkerMessage, mkWorkerReadyMsg, WorkerMessage, WorkerMessageTag } from './message';
 
-let textureData: Uint8Array;
+type ColourRGB = [ number, number, number ];
+
+// Assign colours to workers for debug:
+const WORKER_COLOURS: ColourRGB[] = [
+    [ 255,   0,   0 ],
+    [   0, 255,   0 ],
+    [   0,   0, 255 ],
+    [ 255, 255,   0 ],
+    [   0, 255, 255 ],
+    [ 255,   0, 255 ],
+    [ 255, 255, 255 ],
+    [   0,   0,   0 ]
+];
+
+const getColour = (workerId: number): ColourRGB => WORKER_COLOURS[workerId % WORKER_COLOURS.length];
+
+let workerId: number;
 let controlData: Int32Array;
-let id: number;
+let textureData: Uint8Array;
 let colour: ColourRGB;
 const alpha = 255;
 let chunk: BufferChunk;
 
-// Handle (init) message from main thread
-const handleMessage = (e: MessageEvent<WorkerMessage | null>): void => {
-    const { data } = e;
-    if (data !== null) {
-        textureData = data.textureData;
-        controlData = data.controlData;
-        id = data.workerId;
-        colour = getColour(id);
-        chunk = mkBufferChunk();
-    }
-    doUpdate();
-};
-
-const doUpdate = (): void => {
-    if (DEBUG) console.log(`[worker] [${id}] message received from main`);
-    let n: number;
-    while ((n = Atomics.sub(controlData, ControlIndex.REMAINING_SLICES, 1)) >= 0) {
-        if (DEBUG) console.log(`[worker] [${id}] processing slice ${n}`);
-        fillSliceWithStatic(textureData, n, id);
-    }
-    // All slices are now done - and also this worker
-    if (Atomics.sub(controlData, ControlIndex.REMAINING_WORKERS, 1) === 0) {
-        // This is the last worker, which gets to post the message back to the main thread
-        if (DEBUG) console.log(`[worker] [${id}] posting message`);
-        postMessage(id);
+// Handle messages (from main thread)
+const handleMessage = (e: MessageEvent<WorkerMessage>): void => {
+    const { data: message } = e;
+    switch (message.tag) {
+        case WorkerMessageTag.INIT:
+            console.log(`[worker] [${message.workerId}] init message received from main`);
+            init(message);
+            self.postMessage(mkWorkerReadyMsg(message.workerId));
+            break;
+        case WorkerMessageTag.RUN:
+            console.log(`[worker] [${workerId}] run message received from main`);
+            run();
+            break;
     }
 };
 
-// Do the actual work for a particular slice
-const fillSliceWithStatic = (buffer: Uint8Array, n: number, id: number): void => {
-    const { xStart, xEnd, yStart, yEnd, iStart} = updateBufferChunk(chunk, n);
+// Grab chunks and process them until all done
+const run = (): void => {
+    const shouldStop = false;
+    while (!shouldStop) {
+        if (DEBUG) console.log(`[worker] [${workerId}] waiting...`);
+        waitOnWorkerState(controlData);
+        if (getWorkerState(controlData) === WorkerState.STOP) break;
+        if (DEBUG) console.log(`[worker] [${workerId}] running...`);
+        let n: number;
+        while ((n = decreaseRemainingChunks(controlData)) > 0) {
+            const chunkIx = n - 1;
+            if (DEBUG) console.log(`[worker] [${workerId}] processing chunk ${chunkIx}`);
+            fillChunkWithStatic(textureData, chunkIx, workerId);
+        }
+        setWaitingWorkerState(controlData);
+        decreaseRemainingWorkers(controlData);
+    }
+    if (DEBUG) console.log(`[worker] [${workerId}] stopping...`);
+};
+
+// Do the actual work for a particular chunk
+const fillChunkWithStatic = (buffer: Uint8Array, chunkIx: number, workerId: number): void => {
+    const { xStart, xEnd, yStart, yEnd, iStart } = updateBufferChunk(chunk, chunkIx);
     let i = iStart; // buffer index
-    if (DEBUG) console.log(`[worker] [${id}] filling buffer chunk [ ${xStart}, ${xEnd}, ${yStart}, ${yEnd} ] (${iStart})`);
+    if (DEBUG) console.log(`[worker] [${workerId}] filling buffer chunk [ ${xStart}, ${xEnd}, ${yStart}, ${yEnd} ] (${iStart})`);
     for (let y = yStart; y < yEnd; y++) { // bottom-to-top
         for (let x = xStart; x < xEnd; x++) { // left-to-right
             let [ red, green, blue ] = colour;
@@ -54,6 +81,14 @@ const fillSliceWithStatic = (buffer: Uint8Array, n: number, id: number): void =>
             buffer[i++] = alpha;
         }
     }
+};
+
+const init = (message: InitWorkerMessage): void => {
+    workerId = message.workerId;
+    controlData = message.controlData;
+    textureData = message.textureData;
+    colour = getColour(workerId);
+    chunk = mkBufferChunk();
 };
 
 // Register handler for messages from the main thread

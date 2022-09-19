@@ -31,7 +31,7 @@ canvas {
     align-items: center;
 }
 
-#delta, #fps, #ups {
+#delta, #fps {
     font-size: 1.1rem;
     font-style: italic;
     text-align: end;

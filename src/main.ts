@@ -1,18 +1,18 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH, ControlIndex, DEBUG, NUM_CONTROL_INTS, NUM_SLICES, NUM_TEXTURE_BYTES, NUM_WORKERS, WorkerMessage } from './common';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, DEBUG, NUM_TEXTURE_BYTES, NUM_WORKERS } from './common';
+import { getRemainingWorkers, initControlData, NUM_CONTROL_INTS, resetControlData } from './control';
 import { mkCounter, updateCounter, updateTime } from './counter';
-import { initWebGlContext, uploadAndRender } from './webgl';
+import { isReadyMsg, MainThreadMessage, mkInitWorkerMsg, mkRunWorkerMsg } from './message';
+import { initWebGl, uploadAndRender } from './webgl';
 
-const workers: Worker[] = [];
-
-let gl: WebGLRenderingContext;
-let textureData: Uint8Array;
 let controlData: Int32Array;
-let bufferIsUpdated = false;
+let textureData: Uint8Array;
+const workers: Worker[] = [];
+let numWorkersReady = 0;
 
 // The main function
 const main = (): void => {
 
-    // Chjeck if shared buffers are available
+    // Check if shared buffers are available
     checkSharedBufferReqs();
 
     // All the shared data is stored in this buffer
@@ -23,35 +23,40 @@ const main = (): void => {
     // This view will be updated (by workers) without Atomics (faster)
     textureData = new Uint8Array(sharedBuffer, 0, NUM_TEXTURE_BYTES);
 
-    // Create a view for the control data part - which is two numbers:
-    //     [0] is remaining slices (decreased by workers when not all slices done)
-    //     [1] is remaining workers (decreased by workers when all slices done)
+    // Create a view for the control data part and initialize the values
     // This view will be updated using Atomics (thread safe)
     controlData = new Int32Array(sharedBuffer, NUM_TEXTURE_BYTES, NUM_CONTROL_INTS);
-    Atomics.store(controlData, ControlIndex.REMAINING_SLICES, NUM_SLICES - 1);
-    Atomics.store(controlData, ControlIndex.REMAINING_WORKERS, NUM_WORKERS - 1);
+    initControlData(controlData);
 
     // Init the canvas element and the WebGL context
-    const canvas = initCanvas();
-    gl = initWebGlContext(canvas, textureData);
+    initWebGl(initCanvas(), textureData);
 
-    // Make FPS and UPS (worker update) counters
+    // Make FPS counter
     mkCounter('fps');
-    mkCounter('ups');
 
     // Spawn the worker threads
-    for (let id = 0; id < NUM_WORKERS; id++) {
-        const message: WorkerMessage = { textureData, controlData, workerId: id };
-        workers[id] = new Worker('worker.js');
-        workers[id].addEventListener('message', handleWorkerMessage);
-        workers[id].postMessage(message);
+    for (let workerId = 0; workerId < NUM_WORKERS; workerId++) {
+        workers[workerId] = new Worker('worker.js');
+        workers[workerId].addEventListener('message', handleMessageFromWorker);
+        workers[workerId].postMessage(mkInitWorkerMsg(workerId, controlData, textureData));
     }
+};
 
-    // Start the show
-    window.requestAnimationFrame((time: number) => {
-        updateTime(time);
-        window.requestAnimationFrame(update);
-    });
+const handleMessageFromWorker = (e: MessageEvent<MainThreadMessage>): void => {
+    const { data: message } = e;
+    const { workerId } = message;
+    if (isReadyMsg(message)) {
+        console.log(`[main] ready message received from worker ${workerId}`);
+        workers[workerId].postMessage(mkRunWorkerMsg());
+        if (++numWorkersReady === NUM_WORKERS) {
+            // All workers are ready - start the update/render loop
+            resetControlData(controlData);
+            window.requestAnimationFrame((time: number) => {
+                updateTime(time);
+                window.requestAnimationFrame(update);
+            });
+        }
+    }
 };
 
 // Update the view
@@ -60,30 +65,22 @@ const update = (time: number): void => {
     updateTime(time);
     updateCounter('fps');
 
-    // If texture buffer is updated by workers - upload to GPU and render
-    if (bufferIsUpdated) {
-
-        updateCounter('ups');
-        uploadAndRender(gl, textureData);
-        bufferIsUpdated = false;
-        if (DEBUG) return; // Only render once
-
-        // Reset control buffer and start workers again
-        Atomics.store(controlData, ControlIndex.REMAINING_SLICES, NUM_SLICES - 1);
-        Atomics.store(controlData, ControlIndex.REMAINING_WORKERS, NUM_WORKERS - 1);
-        for (let id = 0; id < NUM_WORKERS; id++) {
-            workers[id].postMessage(null);
-        }
+    // Wait until all workers are done...
+    let remaining: number;
+    while ((remaining = getRemainingWorkers(controlData)) > 0) {
+        if (DEBUG) console.log(`[main] [update] remaining workers: ${remaining}`);
     }
+
+    // Upload texture to GPU and render
+    uploadAndRender(textureData);
+
+    // Reset control buffer and start workers again
+    resetControlData(controlData);
+
+    if (DEBUG) return; // Only render once
 
     // Loop
     window.requestAnimationFrame(update);
-};
-
-// All workers have finished
-const handleWorkerMessage = (e: MessageEvent<number>): void => {
-    if (DEBUG) console.log(`[main] message received from worker ${e.data}`);
-    bufferIsUpdated = true;
 };
 
 // Checked if security requirements are met so we can use SharedArrayBuffer
@@ -102,6 +99,17 @@ const initCanvas = (): HTMLCanvasElement => {
     canvas.height = CANVAS_HEIGHT;
     return canvas;
 };
+
+const destroy = (): void => {
+    console.log('[main] [destroy] ...');
+    for (const worker of workers) {
+        try { worker.terminate(); }
+        catch (e) { /* ignored */ }
+    }
+};
+
+// Cleanup on unload (e.g. reload)
+window.addEventListener('unload', destroy);
 
 // Run the 'main' function when everything is loaded
 window.addEventListener('load', main);

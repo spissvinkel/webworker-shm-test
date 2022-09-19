@@ -20,57 +20,58 @@ const INDICES = [
     2, 3, 0
 ];
 
-export const uploadAndRender = (gl: WebGLRenderingContext, dataBuffer: Uint8Array): void => {
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT, gl.RGBA, gl.UNSIGNED_BYTE, dataBuffer);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.drawElements(gl.TRIANGLES, INDICES.length, gl.UNSIGNED_SHORT, 0);
+let GL: WebGLRenderingContext;
+
+export const uploadAndRender = (dataBuffer: Uint8Array): void => {
+    GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, dataBuffer);
+    GL.clear(GL.COLOR_BUFFER_BIT);
+    GL.drawElements(GL.TRIANGLES, INDICES.length, GL.UNSIGNED_SHORT, 0);
 };
 
-export const initWebGlContext = (canvas: HTMLCanvasElement, dataBuffer: Uint8Array): WebGLRenderingContext => {
-    const gl = initContext(canvas);
-    initShaderProgram(gl);
-    initGlBuffers(gl);
-    initGlTexture(gl, dataBuffer);
-    return gl;
+export const initWebGl = (canvas: HTMLCanvasElement, dataBuffer: Uint8Array): void => {
+    initContext(canvas);
+    initShaderProgram();
+    initGlBuffers();
+    initGlTexture(dataBuffer);
 };
 
 // Initialize the WebGL context
-const initContext = (canvas: HTMLCanvasElement): WebGLRenderingContext => {
+const initContext = (canvas: HTMLCanvasElement): void => {
     const gl = canvas.getContext('webgl');
     if (gl === null) throw 'No webgl context';
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-    gl.clearColor(BG_COLOUR[0], BG_COLOUR[1], BG_COLOUR[2], BG_COLOUR[3]);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    return gl;
+    GL = gl;
+    GL.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    GL.clearColor(BG_COLOUR[0], BG_COLOUR[1], BG_COLOUR[2], BG_COLOUR[3]);
+    GL.clear(gl.COLOR_BUFFER_BIT);
 };
 
 // Initialize the GLSL shader program (vertex + fragment, embedded in the HTML)
-const initShaderProgram = (gl: WebGLRenderingContext): WebGLProgram => {
-    const glVertexShader = compileShader(gl, gl.VERTEX_SHADER, 'vertex-shader');
-    const glFragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, 'fragment-shader');
-    const glProgram = gl.createProgram();
+const initShaderProgram = (): WebGLProgram => {
+    const glVertexShader = compileShader(GL.VERTEX_SHADER, 'vertex-shader');
+    const glFragmentShader = compileShader(GL.FRAGMENT_SHADER, 'fragment-shader');
+    const glProgram = GL.createProgram();
     if (glProgram === null) throw 'Failed to create shader program';
-    gl.attachShader(glProgram, glVertexShader);
-    gl.attachShader(glProgram, glFragmentShader);
-    gl.linkProgram(glProgram);
-    const linkStatus = gl.getProgramParameter(glProgram, gl.LINK_STATUS);
+    GL.attachShader(glProgram, glVertexShader);
+    GL.attachShader(glProgram, glFragmentShader);
+    GL.linkProgram(glProgram);
+    const linkStatus = GL.getProgramParameter(glProgram, GL.LINK_STATUS);
     if (linkStatus === false) throw 'Failed to link shader program';
-    gl.validateProgram(glProgram);
-    const error = gl.getError();
-    if (error !== gl.NO_ERROR) throw `Failed to validate shader program: ${error}`;
-    gl.useProgram(glProgram);
-    const samplerLocation = gl.getUniformLocation(glProgram, 'txSampler');
-    gl.uniform1i(samplerLocation, 0);
+    GL.validateProgram(glProgram);
+    const error = GL.getError();
+    if (error !== GL.NO_ERROR) throw `Failed to validate shader program: ${error}`;
+    GL.useProgram(glProgram);
+    const samplerLocation = GL.getUniformLocation(glProgram, 'txSampler');
+    GL.uniform1i(samplerLocation, 0);
     return glProgram;
 };
 
 // Compile a shader
-const compileShader = (gl: WebGLRenderingContext, type: number, id: string): WebGLShader => {
-    const glShader = gl.createShader(type);
+const compileShader = (type: number, id: string): WebGLShader => {
+    const glShader = GL.createShader(type);
     if (glShader === null) throw `Failed to create shader: ${id}`;
-    gl.shaderSource(glShader, getShaderSource(id));
-    gl.compileShader(glShader);
-    const compileStatus = gl.getShaderParameter(glShader, gl.COMPILE_STATUS);
+    GL.shaderSource(glShader, getShaderSource(id));
+    GL.compileShader(glShader);
+    const compileStatus = GL.getShaderParameter(glShader, GL.COMPILE_STATUS);
     if (compileStatus === false) throw `Failed to compile shader: ${id}`;
     return glShader;
 };
@@ -83,7 +84,7 @@ const getShaderSource = (id: string): string => {
 };
 
 // Initialize the WebGL buffers for the "full screen" quad which will display the generated texture
-const initGlBuffers = (gl: WebGLRenderingContext): [ WebGLBuffer, WebGLBuffer ] => {
+const initGlBuffers = (): [ WebGLBuffer, WebGLBuffer ] => {
     const size = VERTICES.length + UVS.length;
     const stride = 5 * Float32Array.BYTES_PER_ELEMENT;
     const offset = 3 * Float32Array.BYTES_PER_ELEMENT;
@@ -96,41 +97,41 @@ const initGlBuffers = (gl: WebGLRenderingContext): [ WebGLBuffer, WebGLBuffer ] 
         vertexDataBuffer[k++] = UVS[j++];
         vertexDataBuffer[k++] = UVS[j++];
     }
-    const vertexGlBuffer = createGlBuffer(gl, gl.ARRAY_BUFFER, vertexDataBuffer);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, offset);
-    gl.enableVertexAttribArray(1);
+    const vertexGlBuffer = createGlBuffer(GL.ARRAY_BUFFER, vertexDataBuffer);
+    GL.vertexAttribPointer(0, 3, GL.FLOAT, false, stride, 0);
+    GL.enableVertexAttribArray(0);
+    GL.vertexAttribPointer(1, 2, GL.FLOAT, false, stride, offset);
+    GL.enableVertexAttribArray(1);
 
     const indexDataBuffer = new Uint16Array(INDICES.length * Uint16Array.BYTES_PER_ELEMENT);
     indexDataBuffer.set(INDICES);
-    const indexGlBuffer = createGlBuffer(gl, gl.ELEMENT_ARRAY_BUFFER, indexDataBuffer);
+    const indexGlBuffer = createGlBuffer(GL.ELEMENT_ARRAY_BUFFER, indexDataBuffer);
     return [ vertexGlBuffer, indexGlBuffer ];
 };
 
 // Create a WebGL buffer
-const createGlBuffer = (gl: WebGLRenderingContext, target: number, dataBuffer: BufferSource): WebGLBuffer => {
-    const glBuffer = gl.createBuffer();
+const createGlBuffer = (target: number, dataBuffer: BufferSource): WebGLBuffer => {
+    const glBuffer = GL.createBuffer();
     if (glBuffer === null) throw 'Failed to create GL buffer';
-    gl.bindBuffer(target, glBuffer);
-    gl.bufferData(target, dataBuffer, gl.STATIC_DRAW);
-    const error = gl.getError();
-    if (error !== gl.NO_ERROR) throw `Failed to create GL buffer: ${error}`;
+    GL.bindBuffer(target, glBuffer);
+    GL.bufferData(target, dataBuffer, GL.STATIC_DRAW);
+    const error = GL.getError();
+    if (error !== GL.NO_ERROR) throw `Failed to create GL buffer: ${error}`;
     return glBuffer;
 };
 
 // Initialize a WebGL texture, backed by the buffer which will be updated by the workers
-const initGlTexture = (gl: WebGLRenderingContext, dataBuffer: Uint8Array): WebGLTexture => {
-    const glTexture = gl.createTexture();
+const initGlTexture = (dataBuffer: Uint8Array): WebGLTexture => {
+    const glTexture = GL.createTexture();
     if (glTexture === null) throw 'Failed to create texture';
-    gl.bindTexture(gl.TEXTURE_2D, glTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, CANVAS_WIDTH, CANVAS_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, dataBuffer);
-    gl.activeTexture(gl.TEXTURE0);
-    const error = gl.getError();
-    if (error !== gl.NO_ERROR) throw `Failed to create texture: ${error}`;
+    GL.bindTexture(GL.TEXTURE_2D, glTexture);
+    GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+    GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+    GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
+    GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
+    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, CANVAS_WIDTH, CANVAS_HEIGHT, 0, GL.RGBA, GL.UNSIGNED_BYTE, dataBuffer);
+    GL.activeTexture(GL.TEXTURE0);
+    const error = GL.getError();
+    if (error !== GL.NO_ERROR) throw `Failed to create texture: ${error}`;
     return glTexture;
 };

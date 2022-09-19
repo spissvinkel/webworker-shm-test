@@ -23,12 +23,13 @@ module.exports = {
         }
     },
     rules: {
-        'quotes': [ 'error', 'single' ],
         'eqeqeq': [ 'error', 'always' ],
-        'no-var': 'error',
+        'quotes': [ 'error', 'single' ],
         'semi': [ 'error', 'always' ],
         'semi-style': [ 'error', 'last' ],
+        'no-fallthrough': 0,
         'no-unused-vars': 0,
+        'no-var': 'error',
         '@typescript-eslint/no-unused-vars': [ 'warn', {
             argsIgnorePattern: '^_',
             varsIgnorePattern: '^_'
