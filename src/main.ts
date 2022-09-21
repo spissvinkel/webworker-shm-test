@@ -50,6 +50,7 @@ const handleMessageFromWorker = (e: MessageEvent<MainThreadMessage>): void => {
         workers[workerId].postMessage(mkRunWorkerMsg());
         if (++numWorkersReady === NUM_WORKERS) {
             // All workers are ready - start the update/render loop
+            console.log('[main] all workers are ready');
             resetControlData(controlData);
             window.requestAnimationFrame((time: number) => {
                 updateTime(time);

@@ -9,6 +9,7 @@ body {
     left: 0px;
     background-color: rgb(32, 32, 32);
     color: rgb(224, 224, 224);
+    font-family: sans-serif;
 }
 
 body, canvas {
